@@ -131,7 +131,7 @@ def image_to_base64(image_file):
     if image_file is None:
         return None
     img = Image.open(image_file)
-    img = img.resize((300, 300))  # Resize for consistency
+    img = img.resize((300, 300))
     buffered = BytesIO()
     img.save(buffered, format="JPEG", quality=80)
     return base64.b64encode(buffered.getvalue()).decode()
@@ -186,6 +186,8 @@ if st.session_state.page == "Home":
     ## 🌹 Welcome to Rishta Match!
     Create your profile with photo, browse matches with advanced filters, and when both like each other – contact details are revealed!
     """)
+    # ⭐ ADDED FREE EARNING LINK
+    st.markdown("[💰 Free Earning](https://mansha99.pythonanywhere.com/)")
 
 elif st.session_state.page == "Register":
     if st.session_state.logged_in: st.warning("Already logged in"); st.stop()
@@ -248,7 +250,7 @@ elif st.session_state.page == "Login":
             c = conn.cursor()
             c.execute("SELECT * FROM users WHERE name=?", (name,))
             user = c.fetchone()
-            if user and verify_password(user[13], password):  # password index 13
+            if user and verify_password(user[13], password):
                 st.session_state.logged_in = True
                 st.session_state.user_id = user[0]
                 st.session_state.user_name = user[1]
@@ -262,7 +264,6 @@ elif st.session_state.page == "Browse":
     st.subheader("👀 Browse Profiles")
     conn = get_db_connection()
     c = conn.cursor()
-    # Advanced filters
     with st.expander("🔍 Filters", expanded=True):
         col1, col2, col3 = st.columns(3)
         with col1:
@@ -297,11 +298,10 @@ elif st.session_state.page == "Browse":
     profiles = c.fetchall()
     if profiles:
         for p in profiles:
-            # Skip logged-in user
             if st.session_state.logged_in and p[0] == st.session_state.user_id:
                 continue
             photo_html = ""
-            if p[12]:  # photo_base64
+            if p[12]:
                 photo_html = f'<img src="data:image/jpeg;base64,{p[12]}" class="profile-img" />'
             else:
                 photo_html = '<div style="width:120px;height:120px;border-radius:50%;background:#333;display:inline-block;text-align:center;line-height:120px;font-size:40px;">👤</div>'
@@ -317,7 +317,6 @@ elif st.session_state.page == "Browse":
             </div>
             """, unsafe_allow_html=True)
             if st.session_state.logged_in:
-                # Check if already sent interest
                 c.execute("SELECT id FROM interests WHERE from_user=? AND to_user=?", (st.session_state.user_id, p[0]))
                 existing = c.fetchone()
                 if existing:
@@ -328,11 +327,9 @@ elif st.session_state.page == "Browse":
                                   (st.session_state.user_id, p[0], datetime.now().strftime("%Y-%m-%d %H:%M:%S")))
                         conn.commit()
                         add_notification(p[0], f"💖 {st.session_state.user_name} has shown interest in you!")
-                        # Check for mutual interest
                         c.execute("SELECT id FROM interests WHERE from_user=? AND to_user=?", (p[0], st.session_state.user_id))
                         mutual = c.fetchone()
                         if mutual:
-                            # Mutual interest! Reveal contacts
                             c.execute("SELECT name, contact FROM users WHERE id=?", (st.session_state.user_id,))
                             me = c.fetchone()
                             c.execute("SELECT name, contact FROM users WHERE id=?", (p[0],))
