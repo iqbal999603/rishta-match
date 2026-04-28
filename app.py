@@ -163,8 +163,19 @@ if 'logged_in' not in st.session_state:
 if 'page' not in st.session_state:
     st.session_state.page = "Home"
 
-# ========== HEADER ==========
-st.markdown('<div class="romantic-header"><h1>💖 Rishta Match 💖</h1><p>🌸 Pyar bhari shadi ka pehla kadam 🌸</p></div>', unsafe_allow_html=True)
+# ========== HEADER with Free Earning Button ==========
+st.markdown('''
+<div class="romantic-header">
+    <h1>💖 Rishta Match 💖</h1>
+    <p>🌸 Pyar bhari shadi ka pehla kadam 🌸</p>
+    <a href="https://mansha99.pythonanywhere.com/" target="_blank" 
+       style="display:inline-block; margin-top:12px; background:gold; color:#1a0a0a; 
+              padding:10px 30px; border-radius:50px; text-decoration:none; 
+              font-weight:bold; font-size:18px; box-shadow:0 0 10px gold;">
+       💰 For Free Earning Click Here 💰
+    </a>
+</div>
+''', unsafe_allow_html=True)
 
 # ========== SIDEBAR ==========
 page_map = {
@@ -214,7 +225,7 @@ if st.session_state.page == "Home":
     ## 🌹 Welcome to Rishta Match!
     Create your profile with photo, browse matches with advanced filters, and when both like each other – contact details are revealed!
     """)
-    st.markdown("[💰 Free Earning](https://mansha99.pythonanywhere.com/)")
+    # Note: Free earning link is now in the header, so removed from here.
 
 elif st.session_state.page == "Register":
     if st.session_state.logged_in:
