@@ -438,7 +438,9 @@ elif st.session_state.page == "Admin":
         st.error("Admin secret required")
         st.stop()
     st.success("👑 Admin Panel")
-    tab1, tab2 = st.tabs(["Manage Profiles", "Export Data"])
+    tab1, tab2 = st.tabs(["Manage Profiles", "Export / Import Data"])
+
+    # ========== TAB 1: Manage Profiles ==========
     with tab1:
         conn = get_db_connection()
         c = conn.cursor()
@@ -457,7 +459,10 @@ elif st.session_state.page == "Admin":
                 conn.commit()
                 st.rerun()
         conn.close()
+
+    # ========== TAB 2: Export / Import Data ==========
     with tab2:
+        st.subheader("📥 Download Users CSV")
         conn = get_db_connection()
         c = conn.cursor()
         c.execute("SELECT name, gender, age, education, occupation, city, religion, marital_status, contact, join_date FROM users")
@@ -465,6 +470,61 @@ elif st.session_state.page == "Admin":
         conn.close()
         df = pd.DataFrame(data, columns=["Name","Gender","Age","Education","Occupation","City","Religion","Marital Status","Contact","Join Date"])
         st.download_button("Download CSV", df.to_csv(index=False).encode(), "rishta_users.csv")
+
+        st.markdown("---")
+        st.subheader("📤 Import Users from CSV")
+        uploaded_file = st.file_uploader("Choose a CSV file", type=["csv"])
+        if uploaded_file is not None:
+            try:
+                import_df = pd.read_csv(uploaded_file)
+                # Normalize column names to lower case and strip whitespace
+                import_df.columns = [col.strip().lower() for col in import_df.columns]
+                required_cols = ['name', 'gender', 'age', 'education', 'occupation', 'city', 'religion', 'marital_status', 'contact']
+                missing = [col for col in required_cols if col not in import_df.columns]
+                if missing:
+                    st.error(f"CSV file missing columns: {', '.join(missing)}")
+                else:
+                    if st.button("Import Now"):
+                        conn = get_db_connection()
+                        c = conn.cursor()
+                        skipped = 0
+                        imported = 0
+                        for _, row in import_df.iterrows():
+                            name = str(row['name']).strip()
+                            if not name:
+                                continue
+                            # Check duplicate name
+                            c.execute("SELECT id FROM users WHERE name=?", (name,))
+                            if c.fetchone():
+                                skipped += 1
+                                continue
+                            # Insert with a placeholder password
+                            placeholder_pwd = hash_password("default123")
+                            join_date = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                            try:
+                                c.execute("""INSERT INTO users 
+                                    (name, gender, age, education, occupation, city, religion, marital_status, contact, password, join_date)
+                                    VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
+                                    (name,
+                                     str(row.get('gender', 'Male')).strip(),
+                                     int(row.get('age', 25)),
+                                     str(row.get('education', '')).strip(),
+                                     str(row.get('occupation', '')).strip(),
+                                     str(row.get('city', '')).strip(),
+                                     str(row.get('religion', 'Islam')).strip(),
+                                     str(row.get('marital_status', 'Never Married')).strip(),
+                                     str(row.get('contact', '')).strip(),
+                                     placeholder_pwd,
+                                     join_date))
+                                imported += 1
+                            except Exception as e:
+                                skipped += 1
+                        conn.commit()
+                        conn.close()
+                        st.success(f"Imported {imported} records. Skipped {skipped} duplicates/invalids.")
+                        st.rerun()
+            except Exception as e:
+                st.error(f"Error reading CSV: {e}")
 
 # ========== FOOTER ==========
 st.markdown("""
