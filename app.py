@@ -172,7 +172,7 @@ st.markdown('''
        style="display:inline-block; margin-top:12px; background:gold; color:#1a0a0a; 
               padding:10px 30px; border-radius:50px; text-decoration:none; 
               font-weight:bold; font-size:18px; box-shadow:0 0 10px gold;">
-       💰 For Free Earning Click Here 💰
+       💰 Learn This Skill Click Here 💰
     </a>
 </div>
 ''', unsafe_allow_html=True)
