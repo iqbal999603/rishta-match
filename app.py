@@ -419,68 +419,84 @@ elif st.session_state.page == "Admin":
         st.error("Admin secret required")
         st.stop()
     st.success("👑 Admin Panel")
-    tab1, tab2 = st.tabs(["Manage Profiles", "Export / Import Data"])
+    # ---- Separated into distinct sections for clarity ----
+    tab1, tab2 = st.tabs(["👥 Manage Profiles", "📁 Export / Import Data"])
 
     with tab1:
         conn = get_db_connection()
         c = conn.cursor()
         c.execute("SELECT id, name, gender, age, city, contact FROM users")
         users = c.fetchall()
-        for u in users:
-            cols = st.columns([2,2,1,1,2,2])
-            cols[0].write(html.escape(u[1]))
-            cols[1].write(html.escape(u[2]))
-            cols[2].write(str(u[3]))
-            cols[3].write(html.escape(u[4] if u[4] else "N/A"))
-            cols[4].write(html.escape(u[5] if u[5] else "N/A"))
-            if cols[5].button("Delete", key=f"del_{u[0]}"):
-                c.execute("DELETE FROM users WHERE id=?", (u[0],))
-                c.execute("DELETE FROM interests WHERE from_user=? OR to_user=?", (u[0], u[0]))
-                conn.commit()
-                st.rerun()
+        if users:
+            for u in users:
+                cols = st.columns([2,2,1,1,2,2])
+                cols[0].write(html.escape(u[1]))
+                cols[1].write(html.escape(u[2]))
+                cols[2].write(str(u[3]))
+                cols[3].write(html.escape(u[4] if u[4] else "N/A"))
+                cols[4].write(html.escape(u[5] if u[5] else "N/A"))
+                if cols[5].button("Delete", key=f"del_{u[0]}"):
+                    c.execute("DELETE FROM users WHERE id=?", (u[0],))
+                    c.execute("DELETE FROM interests WHERE from_user=? OR to_user=?", (u[0], u[0]))
+                    conn.commit()
+                    st.rerun()
+        else:
+            st.info("No users found.")
         conn.close()
 
     with tab2:
-        st.subheader("📥 Download Users CSV")
+        # ---- EXPORT SECTION ----
+        st.subheader("📥 Export Users to CSV")
         conn = get_db_connection()
         c = conn.cursor()
-        c.execute("SELECT name, gender, age, education, occupation, city, religion, marital_status, contact, join_date FROM users")
+        c.execute("SELECT name, gender, age, education, occupation, city, religion, marital_status, height, bio, contact, join_date FROM users")
         data = c.fetchall()
         conn.close()
-        df = pd.DataFrame(data, columns=["Name","Gender","Age","Education","Occupation","City","Religion","Marital Status","Contact","Join Date"])
-        st.download_button("Download CSV", df.to_csv(index=False).encode(), "rishta_users.csv")
+        if data:
+            df = pd.DataFrame(data, columns=["Name","Gender","Age","Education","Occupation","City","Religion","Marital Status","Height","Bio","Contact","Join Date"])
+            csv = df.to_csv(index=False).encode()
+            st.download_button(
+                label="📥 Download CSV",
+                data=csv,
+                file_name="rishta_users.csv",
+                mime="text/csv"
+            )
+        else:
+            st.warning("No data to export.")
 
-        st.markdown("---")
+        st.divider()
+
+        # ---- IMPORT SECTION ----
         st.subheader("📤 Import Users from CSV")
-        st.markdown("**CSV format:** columns can be named: `name`, `gender`, `age`, `education`, `occupation`, `city`, `religion`, `marital_status`, `contact` (height, bio, photo optional).")
-        uploaded_file = st.file_uploader("Choose a CSV file", type=["csv"])
+        st.caption("The CSV file should have columns: `name`, `gender`, `age`, `city`, `contact` (other fields optional).")
+        uploaded_file = st.file_uploader("Choose CSV file", type=["csv"], key="import_csv")
         if uploaded_file is not None:
             try:
-                import_df = pd.read_csv(uploaded_file)
+                df_import = pd.read_csv(uploaded_file)
                 # Normalize column names: strip, lower, replace spaces with underscore
-                import_df.columns = [col.strip().lower().replace(' ', '_') for col in import_df.columns]
-                # Check essential columns
+                df_import.columns = [str(col).strip().lower().replace(' ', '_') for col in df_import.columns]
+                # Required columns
                 essential = ['name', 'gender', 'age', 'city', 'contact']
-                missing_essential = [col for col in essential if col not in import_df.columns]
-                if missing_essential:
-                    st.error(f"Missing required columns: {', '.join(missing_essential)}")
+                missing = [col for col in essential if col not in df_import.columns]
+                if missing:
+                    st.error(f"❌ Missing required columns: {', '.join(missing)}")
                 else:
-                    if st.button("Import Now"):
+                    if st.button("📤 Import Now", type="primary"):
                         conn = get_db_connection()
                         c = conn.cursor()
                         skipped = 0
                         imported = 0
-                        for _, row in import_df.iterrows():
+                        for _, row in df_import.iterrows():
                             name = str(row['name']).strip()
                             if not name:
                                 skipped += 1
                                 continue
-                            # Check duplicate
+                            # Check if name already exists
                             c.execute("SELECT id FROM users WHERE name=?", (name,))
                             if c.fetchone():
                                 skipped += 1
                                 continue
-
+                            # Prepare values with defaults
                             gender = str(row.get('gender', 'Male')).strip()
                             age = int(row.get('age', 25))
                             education = str(row.get('education', '')).strip()
@@ -491,24 +507,26 @@ elif st.session_state.page == "Admin":
                             contact = str(row.get('contact', '')).strip()
                             height = str(row.get('height', '')).strip()
                             bio = str(row.get('bio', '')).strip()
-                            photo_b64 = None   # Can't import photo via CSV easily, ignore
-
-                            placeholder_pwd = hash_password("default123")
+                            # Password: set a default
+                            hashed_pw = hash_password("default123")
                             join_date = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                             try:
                                 c.execute("""INSERT INTO users 
-                                    (name, gender, age, education, occupation, city, religion, marital_status, height, bio, contact, photo_base64, password, join_date)
-                                    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
-                                    (name, gender, age, education, occupation, city, religion, marital_status, height, bio, contact, photo_b64, placeholder_pwd, join_date))
+                                    (name, gender, age, education, occupation, city, religion, marital_status, height, bio, contact, password, join_date)
+                                    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                                    (name, gender, age, education, occupation, city, religion, marital_status, height, bio, contact, hashed_pw, join_date))
                                 imported += 1
                             except Exception:
                                 skipped += 1
                         conn.commit()
                         conn.close()
-                        st.success(f"Imported {imported} records. Skipped {skipped} duplicates/invalids.")
+                        if imported > 0:
+                            st.success(f"✅ Imported {imported} records successfully!")
+                        if skipped > 0:
+                            st.info(f"⏭️ Skipped {skipped} records (duplicates or invalid).")
                         st.rerun()
             except Exception as e:
-                st.error(f"Error reading CSV: {str(e)}")
+                st.error(f"Failed to read CSV: {e}")
 
 # ========== FOOTER ==========
 st.markdown("""
