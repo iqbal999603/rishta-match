@@ -66,27 +66,22 @@ st.markdown("""
         border: 1px solid #ff4d4d !important;
     }
 </style>
-""", unsafe_allow_html=True)  # Safe: no user data inside
+""", unsafe_allow_html=True)
 
-# ========== SECRETS (NO HARDCODED FALLBACK) ==========
+# ========== SECRETS ==========
 def get_admin_secrets():
     try:
         admin_secret = st.secrets["ADMIN_SECRET"]
         admin_password = st.secrets["ADMIN_PASSWORD"]
         return admin_secret, admin_password
     except Exception:
-        st.error("""
-        ⚠️ **Admin secrets not configured!**  
-        Please add `ADMIN_SECRET` and `ADMIN_PASSWORD` to your Streamlit secrets.  
-        For local development, create a `.streamlit/secrets.toml` file.
-        """)
+        st.error("⚠️ Admin secrets not configured! Please add ADMIN_SECRET and ADMIN_PASSWORD to Streamlit secrets.")
         st.stop()
 
 ADMIN_SECRET, ADMIN_PASSWORD = get_admin_secrets()
 
-# ========== DATABASE HELPERS (No cache, safe threading) ==========
+# ========== DATABASE HELPERS ==========
 def get_db_connection():
-    """Returns a new SQLite connection with WAL mode and row_factory."""
     conn = sqlite3.connect('rishta.db', timeout=20)
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA busy_timeout=5000")
@@ -111,7 +106,6 @@ def init_db():
                  (id INTEGER PRIMARY KEY AUTOINCREMENT,
                   user_id INTEGER, message TEXT, is_read INTEGER DEFAULT 0,
                   created_at TEXT)''')
-    # Unique index on name to prevent duplicates
     c.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_users_name ON users(name)")
     conn.commit()
     conn.close()
@@ -142,18 +136,17 @@ def add_notification(user_id, msg):
     conn.commit()
     conn.close()
 
-# ========== IMAGE HANDLING (with validation) ==========
+# ========== IMAGE HANDLING ==========
 def image_to_base64(image_file):
     if image_file is None:
         return None
-    # Check file size (2 MB limit)
     if image_file.size > 2 * 1024 * 1024:
         st.error("Photo too large! Maximum 2 MB allowed.")
         return None
     try:
         img = Image.open(image_file)
-        img.verify()  # Verify image integrity
-        img = Image.open(image_file)  # Need to reopen after verify
+        img.verify()
+        img = Image.open(image_file)
         img = img.resize((300, 300))
         buffered = BytesIO()
         img.save(buffered, format="JPEG", quality=80)
@@ -173,7 +166,7 @@ if 'page' not in st.session_state:
 # ========== HEADER ==========
 st.markdown('<div class="romantic-header"><h1>💖 Rishta Match 💖</h1><p>🌸 Pyar bhari shadi ka pehla kadam 🌸</p></div>', unsafe_allow_html=True)
 
-# ========== SIDEBAR (with logout) ==========
+# ========== SIDEBAR ==========
 page_map = {
     "🏠 Home": "Home",
     "📝 Register": "Register",
@@ -191,8 +184,6 @@ with st.sidebar:
     if st.session_state.page != page_map[sel]:
         st.session_state.page = page_map[sel]
         st.rerun()
-    
-    # Logout button
     if st.session_state.logged_in:
         if st.button("🚪 Logout"):
             st.session_state.logged_in = False
@@ -209,10 +200,8 @@ if st.session_state.logged_in:
     if notifs:
         with st.expander(f"🔔 {len(notifs)} new notification(s)"):
             for n in notifs:
-                # Escape notification message to prevent XSS
                 safe_msg = html.escape(n[1])
                 st.markdown(f'<div class="notification">{safe_msg}</div>', unsafe_allow_html=True)
-            # Mark as read – safe because ids are ints from DB
             ids = [n[0] for n in notifs]
             placeholders = ','.join('?' * len(ids))
             c.execute(f"UPDATE notifications SET is_read=1 WHERE id IN ({placeholders})", ids)
@@ -246,7 +235,7 @@ elif st.session_state.page == "Register":
             marital_status = st.selectbox("Marital Status", ["Never Married", "Divorced", "Widowed"])
             height = st.text_input("Height (e.g., 5'8\")", placeholder="5 feet 8 inches")
         bio = st.text_area("About Yourself (Bio)")
-        contact = st.text_input("Contact Number (hidden until match)", help="Phone number will only be shown after mutual interest")
+        contact = st.text_input("Contact Number (hidden until match)")
         photo = st.file_uploader("Upload Your Photo", type=["jpg", "jpeg", "png"])
         password = st.text_input("Password *", type="password")
         confirm = st.text_input("Confirm Password *", type="password")
@@ -321,7 +310,6 @@ elif st.session_state.page == "Browse":
         with col3:
             city = st.text_input("City (contains)")
             marital = st.selectbox("Marital Status", ["All", "Never Married", "Divorced", "Widowed"], key="filter_marital")
-
     query = "SELECT * FROM users WHERE age BETWEEN ? AND ?"
     params = [age_min, age_max]
     if gender != "All":
@@ -342,18 +330,14 @@ elif st.session_state.page == "Browse":
     query += " ORDER BY join_date DESC"
     c.execute(query, params)
     profiles = c.fetchall()
-
-    # If logged in, fetch all interests sent by current user in one go
     sent_interests = set()
     if st.session_state.logged_in:
         c.execute("SELECT to_user FROM interests WHERE from_user=?", (st.session_state.user_id,))
         sent_interests = {row[0] for row in c.fetchall()}
-
     if profiles:
         for p in profiles:
             if st.session_state.logged_in and p[0] == st.session_state.user_id:
                 continue
-            # Escape all user data to prevent XSS
             safe_name = html.escape(p[1])
             safe_age = html.escape(str(p[3]))
             safe_edu = html.escape(p[4] if p[4] else 'N/A')
@@ -378,19 +362,16 @@ elif st.session_state.page == "Browse":
                     <p>{safe_bio}</p>
                 </div>
             </div>
-            """, unsafe_allow_html=True)  # Safe because we escaped user data
-            
+            """, unsafe_allow_html=True)
             if st.session_state.logged_in:
                 if p[0] in sent_interests:
                     st.button("✅ Interest Sent", disabled=True, key=f"sent_{p[0]}")
                 else:
                     if st.button("💌 Send Interest", key=f"send_{p[0]}"):
-                        # Send interest
                         c.execute("INSERT INTO interests (from_user, to_user, date) VALUES (?,?,?)",
                                   (st.session_state.user_id, p[0], datetime.now().strftime("%Y-%m-%d %H:%M:%S")))
                         conn.commit()
                         add_notification(p[0], f"💖 {html.escape(st.session_state.user_name)} has shown interest in you!")
-                        # Check mutual interest
                         c.execute("SELECT id FROM interests WHERE from_user=? AND to_user=?", (p[0], st.session_state.user_id))
                         mutual = c.fetchone()
                         if mutual:
@@ -440,7 +421,6 @@ elif st.session_state.page == "Admin":
     st.success("👑 Admin Panel")
     tab1, tab2 = st.tabs(["Manage Profiles", "Export / Import Data"])
 
-    # ========== TAB 1: Manage Profiles ==========
     with tab1:
         conn = get_db_connection()
         c = conn.cursor()
@@ -460,7 +440,6 @@ elif st.session_state.page == "Admin":
                 st.rerun()
         conn.close()
 
-    # ========== TAB 2: Export / Import Data ==========
     with tab2:
         st.subheader("📥 Download Users CSV")
         conn = get_db_connection()
@@ -473,16 +452,18 @@ elif st.session_state.page == "Admin":
 
         st.markdown("---")
         st.subheader("📤 Import Users from CSV")
+        st.markdown("**CSV format:** columns can be named: `name`, `gender`, `age`, `education`, `occupation`, `city`, `religion`, `marital_status`, `contact` (height, bio, photo optional).")
         uploaded_file = st.file_uploader("Choose a CSV file", type=["csv"])
         if uploaded_file is not None:
             try:
                 import_df = pd.read_csv(uploaded_file)
-                # Normalize column names to lower case and strip whitespace
-                import_df.columns = [col.strip().lower() for col in import_df.columns]
-                required_cols = ['name', 'gender', 'age', 'education', 'occupation', 'city', 'religion', 'marital_status', 'contact']
-                missing = [col for col in required_cols if col not in import_df.columns]
-                if missing:
-                    st.error(f"CSV file missing columns: {', '.join(missing)}")
+                # Normalize column names: strip, lower, replace spaces with underscore
+                import_df.columns = [col.strip().lower().replace(' ', '_') for col in import_df.columns]
+                # Check essential columns
+                essential = ['name', 'gender', 'age', 'city', 'contact']
+                missing_essential = [col for col in essential if col not in import_df.columns]
+                if missing_essential:
+                    st.error(f"Missing required columns: {', '.join(missing_essential)}")
                 else:
                     if st.button("Import Now"):
                         conn = get_db_connection()
@@ -492,39 +473,42 @@ elif st.session_state.page == "Admin":
                         for _, row in import_df.iterrows():
                             name = str(row['name']).strip()
                             if not name:
+                                skipped += 1
                                 continue
-                            # Check duplicate name
+                            # Check duplicate
                             c.execute("SELECT id FROM users WHERE name=?", (name,))
                             if c.fetchone():
                                 skipped += 1
                                 continue
-                            # Insert with a placeholder password
+
+                            gender = str(row.get('gender', 'Male')).strip()
+                            age = int(row.get('age', 25))
+                            education = str(row.get('education', '')).strip()
+                            occupation = str(row.get('occupation', '')).strip()
+                            city = str(row.get('city', '')).strip()
+                            religion = str(row.get('religion', 'Islam')).strip()
+                            marital_status = str(row.get('marital_status', 'Never Married')).strip()
+                            contact = str(row.get('contact', '')).strip()
+                            height = str(row.get('height', '')).strip()
+                            bio = str(row.get('bio', '')).strip()
+                            photo_b64 = None   # Can't import photo via CSV easily, ignore
+
                             placeholder_pwd = hash_password("default123")
                             join_date = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                             try:
                                 c.execute("""INSERT INTO users 
-                                    (name, gender, age, education, occupation, city, religion, marital_status, contact, password, join_date)
-                                    VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
-                                    (name,
-                                     str(row.get('gender', 'Male')).strip(),
-                                     int(row.get('age', 25)),
-                                     str(row.get('education', '')).strip(),
-                                     str(row.get('occupation', '')).strip(),
-                                     str(row.get('city', '')).strip(),
-                                     str(row.get('religion', 'Islam')).strip(),
-                                     str(row.get('marital_status', 'Never Married')).strip(),
-                                     str(row.get('contact', '')).strip(),
-                                     placeholder_pwd,
-                                     join_date))
+                                    (name, gender, age, education, occupation, city, religion, marital_status, height, bio, contact, photo_base64, password, join_date)
+                                    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                                    (name, gender, age, education, occupation, city, religion, marital_status, height, bio, contact, photo_b64, placeholder_pwd, join_date))
                                 imported += 1
-                            except Exception as e:
+                            except Exception:
                                 skipped += 1
                         conn.commit()
                         conn.close()
                         st.success(f"Imported {imported} records. Skipped {skipped} duplicates/invalids.")
                         st.rerun()
             except Exception as e:
-                st.error(f"Error reading CSV: {e}")
+                st.error(f"Error reading CSV: {str(e)}")
 
 # ========== FOOTER ==========
 st.markdown("""
